@@ -1,6 +1,9 @@
 package com.example.fabiana_godoy_modoguardian.ui.screens
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Environment
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -47,7 +50,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -57,6 +62,8 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import com.example.fabiana_godoy_modoguardian.ui.components.ImagenInteligente
 import com.example.fabiana_godoy_modoguardian.ui.components.PremiumCard
 import com.example.fabiana_godoy_modoguardian.viewmodel.UsuarioViewModel
@@ -77,6 +84,8 @@ fun RegistroIntegralScreen(
     val cargando by usuarioViewModel.cargando.collectAsState()
     val mensajeExito by usuarioViewModel.mensajeExito.collectAsState()
 
+    var tempCameraUri by remember { mutableStateOf<Uri?>(null) }
+
     // Launcher de Galería mediante GetContent
     val galleryLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -84,16 +93,26 @@ fun RegistroIntegralScreen(
         uri?.let { usuarioViewModel.actualizarFoto(it) }
     }
 
-    // Launcher de Cámara básico con vista previa rápida
-    val cameraLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.TakePicturePreview()
-    ) { bitmap ->
-        bitmap?.let {
-            val file = File(context.cacheDir, "foto_camara.jpg")
-            file.outputStream().use { out ->
-                it.compress(android.graphics.Bitmap.CompressFormat.JPEG, 90, out)
+    // Launcher de Cámara con TakePicture y FileProvider
+    val cameraImageLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicture()
+    ) { success ->
+        if (success) {
+            tempCameraUri?.let { uri ->
+                usuarioViewModel.actualizarFoto(uri)
             }
-            usuarioViewModel.actualizarFoto(Uri.fromFile(file))
+        }
+    }
+
+    // Launcher de solicitud de Permiso de Cámara en tiempo de ejecución
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            val photoFile = File(context.getExternalFilesDir(Environment.DIRECTORY_PICTURES), "camera_foto_${System.currentTimeMillis()}.jpg")
+            val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", photoFile)
+            tempCameraUri = uri
+            cameraImageLauncher.launch(uri)
         }
     }
 
@@ -177,7 +196,17 @@ fun RegistroIntegralScreen(
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    OutlinedButton(onClick = { cameraLauncher.launch(null) }) {
+                    OutlinedButton(onClick = {
+                        val permissionCheck = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA)
+                        if (permissionCheck == PackageManager.PERMISSION_GRANTED) {
+                            val photoFile = File(context.getExternalFilesDir(Environment.DIRECTORY_PICTURES), "camera_foto_${System.currentTimeMillis()}.jpg")
+                            val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", photoFile)
+                            tempCameraUri = uri
+                            cameraImageLauncher.launch(uri)
+                        } else {
+                            permissionLauncher.launch(Manifest.permission.CAMERA)
+                        }
+                    }) {
                         Icon(
                             imageVector = Icons.Default.CameraAlt,
                             contentDescription = "Cámara",
